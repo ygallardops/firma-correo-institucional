@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; background:#f3f5f8; margin:0; padding:20px 16px; color:#1d3a4c; }
+  .wrap { max-width:760px; margin:auto; display:grid; gap:14px; }
+  h2 { margin:0; color:#0077C8; }
+  .yo { margin:0; font-size:14px; color:#557080; }
+  form { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px,1fr)); gap:10px 16px; background:#fff; padding:16px; border-radius:8px; }
+  label { font-size:13px; display:flex; flex-direction:column; gap:4px; }
+  input { padding:7px 8px; font-size:14px; border:1px solid #bbb; border-radius:4px; }
+  .preview { background:#fff; padding:20px; border-radius:8px; overflow-x:auto; min-height:90px; }
+  .botones { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  button { border:0; padding:10px 18px; font-size:15px; border-radius:6px; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  #aplicar { background:#0077C8; color:#fff; }
+  #copiar { background:#fff; color:#0077C8; border:1px solid #0077C8; }
+  #msg { font-size:14px; }
+  .ok { color:#0a7d2c; } .err { color:#c62828; }
+  small { color:#557080; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2>Firma de correo institucional</h2>
+  <p class="yo" id="yo">&nbsp;</p>
+  <form id="f" onsubmit="return false">
+    <label>Nombre completo * <input name="nombre" placeholder="Nombres y apellidos"></label>
+    <label>Cargo (según Manual de Perfiles de Puestos) * <input name="cargo" placeholder="Ej.: Digitador asistencial"></label>
+    <label>Unidad / Servicio <input name="sub" placeholder="Ej.: Unidad de Registros Médicos"></label>
+    <label>Hospital / Dependencia <input name="ofi" placeholder="Ej.: Hospital ..."></label>
+    <label>Teléfono (opcional) <input name="tel"></label>
+    <label>Anexo (opcional) <input name="anexo"></label>
+    <label>Celular institucional (opcional) <input name="cel"></label>
+  </form>
+
+  <div class="preview" id="firma"></div>
+
+  <div class="botones">
+    <button id="aplicar" type="button">Aplicar a mi Gmail</button>
+    <button id="copiar" type="button">Copiar firma</button>
+    <span id="msg"></span>
+  </div>
+  <small><b>Aplicar a mi Gmail</b> guarda esta firma en tu cuenta. Revisa el resultado en Gmail → ⚙ → Ver toda la configuración → General → Firma, y elígela para correos nuevos y respuestas.<br>
+  Si ese botón no funciona, usa <b>Copiar firma</b> y pégala tú en ese mismo lugar.</small>
+</div>
+
+<script>
+const f = document.getElementById('f'), out = document.getElementById('firma'), msg = document.getElementById('msg');
+const datos = () => Object.fromEntries(new FormData(f));
+const aviso = (t, ok) => { msg.textContent = t; msg.className = ok ? 'ok' : 'err'; };
+
+let espera;
+function actualizar() {
+  clearTimeout(espera);
+  espera = setTimeout(() => google.script.run
+    .withSuccessHandler(html => out.innerHTML = html)
+    .firmaHtml(datos()), 300);
+}
+f.addEventListener('input', actualizar);
+actualizar();
+
+google.script.run.withSuccessHandler(e => document.getElementById('yo').textContent = 'Cuenta: ' + e).correoUsuario();
+
+document.getElementById('aplicar').onclick = function () {
+  const b = this; b.disabled = true; aviso('Guardando…', true);
+  google.script.run
+    .withSuccessHandler(e => { b.disabled = false; aviso('✓ Firma guardada en ' + e, true); })
+    .withFailureHandler(err => { b.disabled = false; aviso(err.message + ' Usa "Copiar firma".', false); })
+    .aplicarFirma(datos());
+};
+
+document.getElementById('copiar').onclick = () => {
+  const r = document.createRange(), s = getSelection();
+  r.selectNodeContents(out); s.removeAllRanges(); s.addRange(r);
+  document.execCommand('copy'); s.removeAllRanges();
+  aviso('✓ Copiada. Pégala en la firma de Gmail.', true);
+};
+</script>
+</body>
+</html>
