@@ -19,12 +19,40 @@
   #msg { font-size:14px; }
   .ok { color:#0a7d2c; } .err { color:#c62828; }
   small { color:#557080; line-height:1.5; }
+  [hidden] { display:none !important; }
+  .permiso { background:#fff4e5; border:2px solid #f0a020; border-radius:8px; padding:16px; display:grid; gap:10px; font-size:15px; line-height:1.45; }
+  .permiso b { font-size:17px; }
+  .permiso a { background:#0077C8; color:#fff; text-decoration:none; padding:10px 18px; border-radius:6px; font-weight:700; }
+  .permiso a.sec { background:#fff; color:#0077C8; border:1px solid #0077C8; }
+  .permiso .acciones { display:flex; flex-wrap:wrap; gap:10px; }
+  .permiso li { margin-bottom:4px; }
+  .cargando { color:#557080; font-size:15px; }
+  #app { display:grid; gap:14px; }
+  .listo { background:#e8f6ee; border:2px solid #0a7d2c; border-radius:8px; padding:16px; display:grid; gap:10px; font-size:15px; line-height:1.45; }
+  .listo > b { font-size:17px; color:#0a7d2c; }
+  .version { color:#8aa0ad; font-size:12px; text-align:right; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h2>Firma de correo institucional</h2>
   <p class="yo" id="yo">&nbsp;</p>
+  <p class="cargando" id="cargando">Revisando permisos…</p>
+  <div class="permiso" id="permiso" hidden>
+    <b>Falta un permiso de Gmail</b>
+    <span>Al autorizar no se marcó la casilla de Gmail, y sin ella no se puede guardar tu firma. Para corregirlo:</span>
+    <ol style="margin:0;padding-left:22px">
+      <li>Pulsa <b>Abrir mis conexiones</b> (se abre en otra pestaña).</li>
+      <li>Entra a <b class="app-nombre">esta aplicación</b> → <b>Eliminar todas</b> → <b>Confirmar</b>.</li>
+      <li>Vuelve a esta pestaña y pulsa <b>Ya lo hice</b>.</li>
+      <li>Google te pedirá permisos de nuevo: esta vez <b>marca la casilla de Gmail</b> y pulsa <b>Continuar</b>.</li>
+    </ol>
+    <div class="acciones">
+      <a id="autorizar" href="#" target="_blank" rel="noopener">Abrir mis conexiones</a>
+      <a id="recargar" class="sec" href="#" target="_top">Ya lo hice</a>
+    </div>
+  </div>
+  <div id="app" hidden>
   <form id="f" onsubmit="return false">
     <label>Nombre completo * <input name="nombre" placeholder="Nombres y apellidos"></label>
     <label>Cargo (según Manual de Perfiles de Puestos) * <input name="cargo" placeholder="Ej.: Digitador asistencial"></label>
@@ -42,8 +70,17 @@
     <button id="copiar" type="button">Copiar firma</button>
     <span id="msg"></span>
   </div>
-  <small><b>Aplicar a mi Gmail</b> guarda esta firma en tu cuenta. Revisa el resultado en Gmail → ⚙ → Ver toda la configuración → General → Firma, y elígela para correos nuevos y respuestas.<br>
+  <div class="listo" id="listo" hidden>
+    <b id="listo-t">✓ Firma guardada. Faltan dos pasos en Gmail:</b>
+    <ol style="margin:0;padding-left:22px">
+      <li>Vuelve a la pestaña de Gmail y <b>recárgala con F5</b>. Sin esto, Gmail no muestra la firma nueva.</li>
+      <li>Ve a ⚙ → <b>Ver toda la configuración</b> → <b>General</b> → <b>Firma</b>. En <b>Valores predeterminados de firma</b>, elige tu firma en <b>los dos campos</b>, marca la casilla <b>"Insertar la firma antes del texto citado…"</b> y pulsa <b>Guardar cambios</b> al final de la página.</li>
+    </ol>
+  </div>
+  <small id="ayuda"><b>Aplicar a mi Gmail</b> guarda esta firma en tu cuenta. Revisa el resultado en Gmail → ⚙ → Ver toda la configuración → General → Firma, y elígela para correos nuevos y respuestas.<br>
   Si ese botón no funciona, usa <b>Copiar firma</b> y pégala tú en ese mismo lugar.</small>
+  </div>
+  <p class="version" id="version"></p>
 </div>
 
 <script>
@@ -61,13 +98,43 @@ function actualizar() {
 f.addEventListener('input', actualizar);
 actualizar();
 
-google.script.run.withSuccessHandler(e => document.getElementById('yo').textContent = 'Cuenta: ' + e).correoUsuario();
+google.script.run.withSuccessHandler(i => {
+  document.getElementById('yo').textContent = 'Cuenta: ' + i.email;
+  document.getElementById('version').textContent = 'Versión ' + i.version;
+  document.querySelectorAll('.app-nombre').forEach(el => el.textContent = i.nombre);
+  if (i.hospital && !f.ofi.value) { f.ofi.value = i.hospital; actualizar(); }
+}).inicio();
+
+// Si falta el permiso, solo se muestra el aviso: el formulario queda oculto para no llenarlo en vano.
+function revisarPermiso() {
+  google.script.run
+    .withSuccessHandler(s => {
+      document.getElementById('cargando').hidden = true;
+      document.getElementById('permiso').hidden = s.ok;
+      document.getElementById('app').hidden = !s.ok;
+      if (!s.ok) {
+        document.getElementById('autorizar').href = s.url;
+        document.getElementById('recargar').href = s.recargar;
+      }
+    })
+    .withFailureHandler(() => {   // si no se pudo revisar, se deja usar la app igual
+      document.getElementById('cargando').hidden = true;
+      document.getElementById('app').hidden = false;
+    })
+    .estadoPermiso();
+}
+revisarPermiso();
 
 document.getElementById('aplicar').onclick = function () {
   const b = this; b.disabled = true; aviso('Guardando…', true);
   google.script.run
-    .withSuccessHandler(e => { b.disabled = false; aviso('✓ Firma guardada en ' + e, true); })
-    .withFailureHandler(err => { b.disabled = false; aviso(err.message + ' Usa "Copiar firma".', false); })
+    .withSuccessHandler(e => {
+      b.disabled = false; aviso('', true);
+      document.getElementById('ayuda').hidden = true;
+      document.getElementById('listo-t').textContent = '✓ Firma guardada en ' + e + '. Faltan dos pasos en Gmail:';
+      const l = document.getElementById('listo'); l.hidden = false; l.scrollIntoView({ behavior: 'smooth' });
+    })
+    .withFailureHandler(err => { b.disabled = false; aviso(err.message, false); revisarPermiso(); })
     .aplicarFirma(datos());
 };
 

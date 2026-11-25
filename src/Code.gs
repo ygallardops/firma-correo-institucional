@@ -1,17 +1,46 @@
 // Generador de firma de correo institucional (Apps Script, aplicación web).
 // Formato: Manual de identidad 2.18 (Verdana, tamaños) + color #0077C8 de la Guía de marca 2022.
 
-// URL pública del logo.
-const LOGO_URL = 'PEGA_AQUI_LA_URL_DEL_LOGO';
+const VERSION = '1.1.0';
+
+// Configuración en Configuración del proyecto → Propiedades del script (no va en el código):
+//   LOGO_URL    URL pública del logo (obligatoria para que la firma lleve logo)
+//   HOSPITAL    Valor inicial del campo Hospital / Dependencia (opcional)
+//   APP_NOMBRE  Nombre del proyecto de Apps Script tal como aparece en las conexiones de Google (opcional)
+function config_() {
+  const p = PropertiesService.getScriptProperties();
+  return {
+    logo: p.getProperty('LOGO_URL') || '',
+    hospital: p.getProperty('HOSPITAL') || '',
+    nombre: p.getProperty('APP_NOMBRE') || 'Firma de correo institucional',
+  };
+}
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('Firma de correo institucional')
+    .setTitle(config_().nombre)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function correoUsuario() {
   return Session.getActiveUser().getEmail();
+}
+
+// Datos que la página necesita al abrir.
+function inicio() {
+  const c = config_();
+  return { email: correoUsuario(), version: VERSION, hospital: c.hospital, nombre: c.nombre };
+}
+
+// Si el usuario pulsó "Continuar" sin marcar la casilla de Gmail, Google no vuelve a mostrarla
+// (ni con getAuthorizationUrl). Lo único que funciona es quitar la conexión y abrir de nuevo,
+// así que se manda a la página de conexiones de su propia cuenta.
+function estadoPermiso() {
+  const info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+  const falta = info.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.REQUIRED;
+  const url = 'https://myaccount.google.com/connections?authuser=' + encodeURIComponent(correoUsuario());
+  // recargar: abre de nuevo la app en la pestaña completa, lo que hace que Google vuelva a pedir permisos.
+  return { ok: !falta, url: falta ? url : '', recargar: ScriptApp.getService().getUrl() };
 }
 
 // Arma la firma en el servidor para que todas salgan con el mismo formato.
@@ -20,15 +49,17 @@ function firmaHtml(d) {
   const t = k => String(d[k] || '').trim().slice(0, 120)
     .replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const V = 'font-family:Verdana,Geneva,sans-serif;';
+  const logo = config_().logo;
   const fono = [t('tel') && 'Telf.: ' + t('tel'), t('anexo') && 'Anexo: ' + t('anexo')].filter(Boolean).join('&nbsp;&nbsp;&nbsp;');
   const celu = t('cel') ? 'Cel.: ' + t('cel') : '';
   const fila = (txt, est) => txt ? `<tr><td colspan="2" style="${V}${est}padding:1px 0;">${txt}</td></tr>` : '';
+  const celdaLogo = logo ? `<td style="vertical-align:middle;padding:0 14px 0 0;border-right:1px dotted #0077C8;">
+<img src="${logo}" alt="Logo" width="200" style="display:block;width:200px;height:auto;border:0;">
+</td>` : '';
   return `<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
 <tr>
-<td style="vertical-align:middle;padding:0 14px 0 0;border-right:1px dotted #0077C8;">
-<img src="${LOGO_URL}" alt="Logo" width="200" style="display:block;width:200px;height:auto;border:0;">
-</td>
-<td style="vertical-align:middle;padding:0 0 0 14px;">
+${celdaLogo}
+<td style="vertical-align:middle;padding:0 0 0 ${logo ? 14 : 0}px;">
 <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
 <tr>
 <td style="${V}font-size:12pt;font-weight:bold;color:#0077C8;padding:0 10px 2px 0;white-space:nowrap;">${t('nombre')}</td>
@@ -52,7 +83,7 @@ function aplicarFirma(d) {
   } catch (e) {
     // Pasa cuando al autorizar no se marcó la casilla de configuración de Gmail.
     if (/permis|authoriz|autoriz|scope|gmail\.settings/i.test(e.message)) {
-      throw new Error('Falta autorizar el permiso de Gmail: recarga la página y, cuando Google pida permisos, marca todas las casillas.');
+      throw new Error('Falta autorizar el permiso de Gmail. Sigue los pasos del aviso naranja.');
     }
     throw e;
   }
